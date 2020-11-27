@@ -48,7 +48,7 @@ If you have no idea what is the difference between java scripted web than regula
 library(rvest)
 main <- "https://shopee.co.id/search?category=40&keyword=iphone%20x&subcategory=1211"
 read_test <- read_html(main)
-html_nodes(read_test,"a") 
+html_nodes(read_test,"a")
 ```
 
 In this case, you need to use web browser simulation tools like Selenium
@@ -442,20 +442,60 @@ clean_review <- textcleaner(review_filter$Review)
 
 ```
 
+```{r}
+clean_review <- readRDS("data_input/review_clean.rds")
+clean_review
+```
+
 
 ```{r,eval=FALSE}
-clean_review <- data.frame()
-for(i in 1:nrow(review_filter)){
-  message("Cleaning",i,"/",nrow(review_filter))
-  temp_clean <- textcleaner(review_filter$Review[i])
-  
-  clean_review <-  rbind(clean_review,temp_clean)
+# function sentiment scoring
+sentiment_matching <- function(x){
+  x <- str_split(x,"\\s+") %>%                    # seperate the words from sentence
+    unlist()
+  x <- match(x,bahasa.sentiment$words)            # match seperated words to bahasa.sentiment words
+  bin <- matrix(ncol = 1,nrow = length(x))        # create empty matrix to collect the score from each review
+  for(i in seq_along(x)){                         # build loop function to apply the match function to every rows
+    if(is.na(x[i] == T)){
+      bin[i] <- 0}else{
+        bin[i] <- bahasa.sentiment$weight[x[i]]   # match the score by its weight
+      }
+  }
+  return(as.numeric(sum(bin)))                    # sum the score from each row and return as numeric value
 }
 
+clean_review <- clean_review %>% 
+  rowwise() %>% 
+  mutate(score = sentiment_matching(x)) %>%
+  mutate(sentiment = ifelse(score <= 0,"negative","positive"))
+
 ```
 
-```{r,eval=FALSE}
-saveRDS(clean_review,"review_clean.rds")
+```{r}
+clean_review <- readRDS("data_input/sent_review.rds")
 ```
 
+
+```{r,message=FALSE}
+review_sen <- new_nonmul_rev %>% 
+  filter(Product %in% unique(desc_clean$Name)) %>% 
+  mutate(score = clean_review$score,
+         sentiment = clean_review$sentiment)
+
+plot_sentiment <- table(review_sen$Product,review_sen$sentiment) %>% data.frame() %>% 
+  setNames(c("Product","sentiment","freq")) %>% 
+  filter(sentiment == "positive") %>% 
+  arrange(-freq) %>% 
+  mutate(text = paste(Product,"\n positive:",freq)) %>% 
+  head(10) %>% 
+  ggplot(aes(x = reorder(Product,freq), y= freq, fill = freq,text=text)) + 
+  geom_col() +
+  labs(title = "Product with highest sentiment review",x = "Product", y = "Freq") +
+  theme_minimal() +
+  scale_x_discrete(label = NULL) +
+  theme(legend.position = "none")
+
+library(plotly)
+ggplotly(plot_sentiment,tooltip = "text")
+```
 
